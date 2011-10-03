@@ -5,6 +5,7 @@
 var dgram = require('dgram');
 var util = require('util');
 var fs = require('fs');
+var os = require('os');
 
 var opcodes = {
   read:  1,
@@ -68,18 +69,28 @@ var initValidRead = function(session, path) {
   session.stream = stream;
 };
 
-var continueRead = function(session) {
-  session.buffer.shift(); 
-  session.block += 1;
-  if(session.buffer.length === 0) {
-    if(session.finished === true) {
-      delete sessions[session.id];
-      console.log("Session %s finished successfully", session.id);
+var extractAckedBlock = function(buffer) {
+  return buffer[2] * 256 + buffer[3];
+};
+
+var continueRead = function(session, buffer) {
+  var ackedBlock = extractAckedBlock(buffer);
+  if(ackedBlock === session.block) {
+    session.buffer.shift(); 
+    session.block += 1;
+    if(session.buffer.length === 0) {
+      if(session.finished === true) {
+        delete sessions[session.id];
+        console.log("Session %s finished successfully", session.id);
+      } else {
+        session.state = "data_wait";
+      }
     } else {
-      session.state = "data_wait";
+      sendData(session.dest, session.block, session.buffer[0]);
     }
   } else {
-    sendData(session.dest, session.block, session.buffer[0]);
+    console.log("Waiting for ack for %d, but got for %d.",
+                session.block, ackedBlock);
   }
 };
 
@@ -118,9 +129,22 @@ var sendError = function(dest, msg) {
   tftp.send(buffer, 0, buffer.length, dest.port, dest.address); 
 }
 
+var clearStaleSessions = function() {
+  var clearTime = os.uptime() - 5;
+  for(sessionId in sessions) {
+    if(sessions.hasOwnProperty(sessionId)) {
+      if(sessions[sessionId].lastMsgAt < clearTime) {
+        console.log("Clearing stale session: %s", sessionId);
+        delete sessions[sessionId];
+      }
+    }
+  }
+};
+
 var handleMsg = function(buffer, addrinfo) {
   var id = util.format("%s:%d", addrinfo.address, addrinfo.port);
   var session = getOrCreateSession(id, addrinfo);
+  session.lastMsgAt = os.uptime();
   var opcode = extractOpCode(buffer);
   console.log("Msg from %s with opcode %d", id, opcode);
   if(opcode == opcodes.read) {
@@ -145,3 +169,4 @@ console.log("Starting TFTP server");
 tftp.bind(69);
 console.log("TFTP server available on %s:%d", tftp.address().address,
                                               tftp.address().port);
+setInterval(clearStaleSessions, 30000);
