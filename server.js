@@ -50,7 +50,8 @@ var sendData = function(dest, block, data) {
 };
 
 var deleteSession = function(session) {
-    if(session.stream !== undefined && session.stream.readable) {
+    if(session.stream !== undefined && 
+        (session.stream.readable || session.stream.writable)) {
       session.stream.destroy();
     }
     delete sessions[session.id];
@@ -76,12 +77,12 @@ var initValidRead = function(session, path) {
   session.stream = stream;
 };
 
-var extractAckedBlock = function(buffer) {
+var extractBlock = function(buffer) {
   return buffer[2] * 256 + buffer[3];
 };
 
 var continueRead = function(session, buffer) {
-  var ackedBlock = extractAckedBlock(buffer);
+  var ackedBlock = extractBlock(buffer);
   if(ackedBlock === session.block) {
     session.stream.resume();
     session.buffer.shift(); 
@@ -136,7 +137,7 @@ var sendError = function(dest, msg) {
 }
 
 var clearStaleSessions = function() {
-  var clearTime = os.uptime() - 5;
+  var clearTime = os.uptime() - 30;
   for(sessionId in sessions) {
     if(sessions.hasOwnProperty(sessionId)) {
       if(sessions[sessionId].lastMsgAt < clearTime) {
@@ -145,6 +146,47 @@ var clearStaleSessions = function() {
       }
     }
   }
+};
+
+var initWrite = function(session, buffer) {
+  var path = extractFilename(buffer); 
+  console.log("Writing %s", path);
+  var stream = fs.createWriteStream(path, { flags: 'w'});
+  stream.on("error", function(error) {
+    sendError(session.dest, "Write error!")
+  });
+  session.stream = stream;
+  sendAck(session.dest, 0); 
+};
+
+var sendAck = function(dest, block) {
+  var buffer = new Buffer(4);
+  buffer[0] = 0; buffer[1] = opcodes.ack; // OpCode
+  buffer[2] = (block >> 8) & 0xff; buffer[3] = block & 0xff; // Block #
+  tftp.send(buffer, 0, buffer.length, dest.port, dest.address); 
+};
+
+var continueWrite = function(session, buffer) {
+  var block = extractBlock(buffer);
+  console.log("write block %d", block);
+  if(block == session.block) {
+    var data = extractData(buffer);
+    if(!session.stream.write(data)) {
+      console.log("Warning! Kernel buffer full.");
+    }
+    session.block += 1;
+    sendAck(session.dest, block);
+    if(data.length < 512) {
+      session.stream.end();
+      console.log("Write finished successfully!");
+    }
+  } else if(block > session.block) {
+    sendError(session.dest, "Unexpected block number")
+  }
+};
+
+var extractData = function(buffer) {
+  return buffer.slice(4);
 };
 
 var handleMsg = function(buffer, addrinfo) {
