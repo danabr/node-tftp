@@ -18,7 +18,7 @@ var opcodes = {
 
 var sessions = {};
 
-var extractFilename = function(buffer) {
+var extractPath = function(buffer) {
   var length = buffer.length;
   for(var offset = 2; offset < length; offset++) {
     if(buffer[offset] == 0) {
@@ -89,7 +89,7 @@ var continueRead = function(session, buffer) {
     session.block += 1;
     if(session.buffer.length === 0) {
       if(session.finished === true) {
-        console.log("Session %s finished successfully", session.id);
+        console.log("%s: File downloaded successfully!", session.id);
       } else {
         session.state = "data_wait";
       }
@@ -103,7 +103,8 @@ var continueRead = function(session, buffer) {
 };
 
 var initRead = function(session, buffer) {
-  var path = extractFilename(buffer);
+  var path = extractPath(buffer);
+  console.log("GET %s", path);
   if(session.stream === undefined) {
     fs.stat(path, function(error, stats) {
       if(error) {
@@ -149,11 +150,15 @@ var clearStaleSessions = function() {
 };
 
 var initWrite = function(session, buffer) {
-  var path = extractFilename(buffer); 
-  console.log("Writing %s", path);
+  var path = extractPath(buffer); 
+  console.log("PUT %s", path);
   var stream = fs.createWriteStream(path, { flags: 'w'});
   stream.on("error", function(error) {
     sendError(session.dest, "Write error!")
+  });
+  stream.on("drain", function() {
+    sendAck(session.dest, session.block);
+    session.block += 1;
   });
   session.stream = stream;
   sendAck(session.dest, 0); 
@@ -168,20 +173,19 @@ var sendAck = function(dest, block) {
 
 var continueWrite = function(session, buffer) {
   var block = extractBlock(buffer);
-  console.log("write block %d", block);
   if(block == session.block) {
     var data = extractData(buffer);
-    if(!session.stream.write(data)) {
-      console.log("Warning! Kernel buffer full.");
-    }
-    session.block += 1;
-    sendAck(session.dest, block);
+    session.stream.write(data);
     if(data.length < 512) {
       session.stream.end();
-      console.log("Write finished successfully!");
+      sendAck(session.dest, session.block);
+      console.log("%s: Write finished successfully!", session.id);
     }
   } else if(block > session.block) {
     sendError(session.dest, "Unexpected block number")
+  } else if(block < session.block) {
+    // Our ack may have been lost
+    sendAck(session.dest, block);
   }
 };
 
@@ -194,7 +198,6 @@ var handleMsg = function(buffer, addrinfo) {
   var session = getOrCreateSession(id, addrinfo);
   session.lastMsgAt = os.uptime();
   var opcode = extractOpCode(buffer);
-  console.log("Msg from %s with opcode %d", id, opcode);
   if(opcode == opcodes.read) {
     initRead(session, buffer);
   } else if(opcode == opcodes.write) {
@@ -207,6 +210,7 @@ var handleMsg = function(buffer, addrinfo) {
     handlError(session, buffer);
   } else {
     // Reply with error
+    console.log("Invalid opcode: %d", opcode);
     sendError(addrinfo, "Invalid opcode");
   }
 };
