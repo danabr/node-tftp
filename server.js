@@ -67,7 +67,6 @@ var initValidRead = function(session, path) {
     }
   });
   stream.on("error", function(error) {
-    deleteSession(session);
     sendError(session, "Read error");
   });
   stream.on("end", function() {
@@ -87,7 +86,6 @@ var continueRead = function(session, buffer) {
     session.block += 1;
     if(session.buffer.length === 0) {
       if(session.finished === true) {
-        deleteSession(session);
         console.log("Session %s finished successfully", session.id);
       } else {
         session.state = "data_wait";
@@ -114,7 +112,6 @@ var initRead = function(session, buffer) {
       }
     });
   } else {
-    deleteSession(session); 
     sendError(session.dest, "Unexpected read request");
   }
 };
