@@ -49,6 +49,13 @@ var sendData = function(dest, block, data) {
   }
 };
 
+var deleteSession = function(session) {
+    if(session.stream !== undefined && session.stream.readable) {
+      session.stream.destroy();
+    }
+    delete sessions[session.id];
+};
+
 var initValidRead = function(session, path) {
   session.state = "data_wait";
   var stream = fs.createReadStream(path, { flags: 'r', bufferSize: 512 });
@@ -60,7 +67,7 @@ var initValidRead = function(session, path) {
     }
   });
   stream.on("error", function(error) {
-    delete sessions[session.id];
+    deleteSession(session);
     sendError(session, "Read error");
   });
   stream.on("end", function() {
@@ -80,7 +87,7 @@ var continueRead = function(session, buffer) {
     session.block += 1;
     if(session.buffer.length === 0) {
       if(session.finished === true) {
-        delete sessions[session.id];
+        deleteSession(session);
         console.log("Session %s finished successfully", session.id);
       } else {
         session.state = "data_wait";
@@ -107,7 +114,7 @@ var initRead = function(session, buffer) {
       }
     });
   } else {
-    delete sessions[session.id];
+    deleteSession(session); 
     sendError(session.dest, "Unexpected read request");
   }
 };
@@ -135,7 +142,7 @@ var clearStaleSessions = function() {
     if(sessions.hasOwnProperty(sessionId)) {
       if(sessions[sessionId].lastMsgAt < clearTime) {
         console.log("Clearing stale session: %s", sessionId);
-        delete sessions[sessionId];
+        deleteSession(sessions[sessionId]); 
       }
     }
   }
