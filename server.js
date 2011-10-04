@@ -104,7 +104,7 @@ var continueRead = function(session, buffer) {
 
 var initRead = function(session, buffer) {
   var path = extractPath(buffer);
-  console.log("GET %s", path);
+  console.log("%s: GET %s", session.id, path);
   if(session.stream === undefined) {
     fs.stat(path, function(error, stats) {
       if(error) {
@@ -151,7 +151,7 @@ var clearStaleSessions = function() {
 
 var initWrite = function(session, buffer) {
   var path = extractPath(buffer); 
-  console.log("PUT %s", path);
+  console.log("%s: PUT %s", session.id, path);
   var stream = fs.createWriteStream(path, { flags: 'w'});
   stream.on("error", function(error) {
     sendError(session.dest, "Write error!")
@@ -165,7 +165,7 @@ var initWrite = function(session, buffer) {
 };
 
 var sendAck = function(dest, block) {
-  var buffer = new Buffer(4);
+  var buffer = new Buffer(5);
   buffer[0] = 0; buffer[1] = opcodes.ack; // OpCode
   buffer[2] = (block >> 8) & 0xff; buffer[3] = block & 0xff; // Block #
   tftp.send(buffer, 0, buffer.length, dest.port, dest.address); 
@@ -193,6 +193,21 @@ var extractData = function(buffer) {
   return buffer.slice(4);
 };
 
+var handleError = function(session, buffer) {
+  var code = extractErrorCode(buffer);
+  var msg = extractErrorMessage(buffer);
+  console.log("%s: Client reported error! Code: %d, msg: %s",
+              session.id, code, msg);
+};
+
+var extractErrorCode = function(buffer) {
+  return buffer[2] * 256 + buffer[3];
+};
+
+var extractErrorMessage = function(buffer) {
+  return buffer.slice(4, buffer.length-1).toString("utf-8");
+};
+
 var handleMsg = function(buffer, addrinfo) {
   var id = util.format("%s:%d", addrinfo.address, addrinfo.port);
   var session = getOrCreateSession(id, addrinfo);
@@ -207,7 +222,7 @@ var handleMsg = function(buffer, addrinfo) {
   } else if(opcode == opcodes.ack) {
     continueRead(session, buffer);
   } else if(opcode == opcodes.error) {
-    handlError(session, buffer);
+    handleError(session, buffer);
   } else {
     // Reply with error
     console.log("Invalid opcode: %d", opcode);
