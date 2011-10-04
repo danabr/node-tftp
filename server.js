@@ -60,6 +60,7 @@ var initValidRead = function(session, path) {
   session.state = "data_wait";
   var stream = fs.createReadStream(path, { flags: 'r', bufferSize: 512 });
   stream.on("data", function(data) {
+    stream.pause();
     session.buffer.push(data);
     if(session.state === "data_wait") {
       sendData(session.dest, session.block, data);
@@ -82,6 +83,7 @@ var extractAckedBlock = function(buffer) {
 var continueRead = function(session, buffer) {
   var ackedBlock = extractAckedBlock(buffer);
   if(ackedBlock === session.block) {
+    session.stream.resume();
     session.buffer.shift(); 
     session.block += 1;
     if(session.buffer.length === 0) {
