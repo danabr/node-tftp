@@ -1,1 +1,8 @@
 A binary mode only TFTP server implemented with NodeJS.
+
+TODO: 
+* Retransmission on reads.
+* Path sanitizing or whitelisting.
+* mkdir -p or similar for subdirectories.
+* Temporary filenames for writes, and mv if transfer finishes correctly.
+* Reorder functions so they appear in a more reader friendly way.
