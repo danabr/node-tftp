@@ -64,8 +64,8 @@ var initValidRead = function(session, path) {
     stream.pause();
     session.buffer.push(data);
     if(session.state === "data_wait") {
-      sendData(session.dest, session.block, data);
-      session.staten = "ack_wait";
+      sendUntilAcked(session, session.block, data, 0);
+      session.state = "ack_wait";
     }
   });
   stream.on("error", function(error) {
@@ -75,6 +75,24 @@ var initValidRead = function(session, path) {
     session.finished = true;
   });
   session.stream = stream;
+};
+
+var sendUntilAcked = function(session, block, data, errors) {
+  if(block == session.block) {
+    if(errors > 0) {
+      console.log("%s: %d attempt to send block %d",
+                  session.id, errors+1, block); 
+    }
+    sendData(session.dest, block, data);
+    if(errors < 5) {
+      errors += 1;
+      // The timeout never seem to trigger.
+      setTimeout(sendUntilAcked, errors*1000, session, block, data, errors);
+    } else {
+      console.log("%s: Block %d was never acked. Stopping transmission.",
+                  session.id);
+    }
+  } // Else, block has been acked
 };
 
 var extractBlock = function(buffer) {
@@ -94,11 +112,19 @@ var continueRead = function(session, buffer) {
         session.state = "data_wait";
       }
     } else {
-      sendData(session.dest, session.block, session.buffer[0]);
+      sendUntilAcked(session, session.block, session.buffer[0], 0);
     }
   } else {
-    console.log("Waiting for ack for %d, but got for %d.",
-                session.block, ackedBlock);
+    // Special case:
+    // The file we sent was exactly 512*n bytes.
+    // We must send an empty data package.
+    if(ackedBlock === session.block-1 && session.finished && 
+        session.buffer.length == 0) {
+      sendUntilAcked(session, session.block, new Buffer(0), 0);
+    } else {
+      console.log("Waiting for ack for %d, but got for %d.",
+                  session.block, ackedBlock);
+    }
   }
 };
 

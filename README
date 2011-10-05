@@ -6,3 +6,5 @@ TODO:
 * mkdir -p or similar for subdirectories.
 * Temporary filenames for writes, and mv if transfer finishes correctly.
 * Reorder functions so they appear in a more reader friendly way.
+* Use a single timeout for a session, rather than multiple.
+* Support for RFC2347, RFC2348 and RFC2349.
