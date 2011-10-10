@@ -6,6 +6,7 @@ var dgram = require('dgram');
 var util = require('util');
 var fs = require('fs');
 var os = require('os');
+var msgs = require('./messages');
 
 var opcodes = {
   read:  1,
@@ -37,24 +38,15 @@ var getOrCreateSession = function(id, addrinfo) {
 };
 
 var sendData = function(dest, block, data) {
-  if(data !== undefined) {
-    var out = new Buffer(data.length + 4);
-    out[0] = 0; out[1] = opcodes.data; // OpCode
-    out[2] = (block >> 8) & 0xff;
-    out[3] = block & 0xff; 
-    data.copy(out, 4, 0, data.length);
-    tftp.send(out, 0, out.length, dest.port, dest.address);
-  } else {
-    console.log("sendData called with no data!");
-  }
+  sendMessage(dest, new msgs.Data(block, data));
 };
 
 var deleteSession = function(session) {
-    if(session.stream !== undefined && 
-        (session.stream.readable || session.stream.writable)) {
-      session.stream.destroy();
-    }
-    delete sessions[session.id];
+  if(session.stream !== undefined && 
+      (session.stream.readable || session.stream.writable)) {
+    session.stream.destroy();
+  }
+  delete sessions[session.id];
 };
 
 var initValidRead = function(session, path) {
@@ -155,12 +147,12 @@ var extractOpCode = function(buffer) {
 };
 
 var sendError = function(dest, msg) {
-  var buffer = new Buffer(msg.length + 5);
-  buffer[0] = 0; buffer[1] = opcodes.error; // OpCode
-  buffer[2] = 0; buffer[3] = 0; // Error code
-  buffer.write(msg, 4, msg.length);
-  buffer[msg.length] = 0;
-  tftp.send(buffer, 0, buffer.length, dest.port, dest.address); 
+  sendMessage(dest, new msgs.Error(0, msg));
+}
+
+var sendMessage = function(dest, msg) {
+  var buffer = msg.toBuffer();
+  tftp.send(buffer, 0, buffer.length, dest.port, dest.address);
 }
 
 var clearStaleSessions = function() {
@@ -191,10 +183,7 @@ var initWrite = function(session, buffer) {
 };
 
 var sendAck = function(dest, block) {
-  var buffer = new Buffer(5);
-  buffer[0] = 0; buffer[1] = opcodes.ack; // OpCode
-  buffer[2] = (block >> 8) & 0xff; buffer[3] = block & 0xff; // Block #
-  tftp.send(buffer, 0, buffer.length, dest.port, dest.address); 
+  sendMessage(dest, new msgs.Ack(block));
 };
 
 var continueWrite = function(session, buffer) {
