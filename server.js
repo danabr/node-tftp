@@ -6,29 +6,11 @@ var dgram = require('dgram');
 var util = require('util');
 var fs = require('fs');
 var os = require('os');
+var messageParser = require('./message_parser').messageParser;
 var msgs = require('./messages');
 
-var opcodes = {
-  read:  1,
-  write: 2,
-  data:  3,
-  ack:   4,
-  error: 5,
-  invalid: 6
-};
-
+var opcodes = msgs.opcodes;
 var sessions = {};
-
-var extractPath = function(buffer) {
-  var length = buffer.length;
-  for(var offset = 2; offset < length; offset++) {
-    if(buffer[offset] == 0) {
-      break;
-    }
-  }
-  var filename = buffer.slice(2, offset);
-  return filename.toString("ascii", 0, filename.length);
-}
 
 var getOrCreateSession = function(id, addrinfo) {
   if(sessions[id] === undefined) {
@@ -87,13 +69,8 @@ var sendUntilAcked = function(session, block, data, errors) {
   } // Else, block has been acked
 };
 
-var extractBlock = function(buffer) {
-  return buffer[2] * 256 + buffer[3];
-};
-
-var continueRead = function(session, buffer) {
-  var ackedBlock = extractBlock(buffer);
-  if(ackedBlock === session.block) {
+var continueRead = function(session, msg) {
+  if(msg.block === session.block) {
     session.stream.resume();
     session.buffer.shift(); 
     session.block += 1;
@@ -110,7 +87,7 @@ var continueRead = function(session, buffer) {
     // Special case:
     // The file we sent was exactly 512*n bytes.
     // We must send an empty data package.
-    if(ackedBlock === session.block-1 && session.finished && 
+    if(msg.block === session.block-1 && session.finished && 
         session.buffer.length == 0) {
       sendUntilAcked(session, session.block, new Buffer(0), 0);
     } else {
@@ -120,29 +97,20 @@ var continueRead = function(session, buffer) {
   }
 };
 
-var initRead = function(session, buffer) {
-  var path = extractPath(buffer);
-  console.log("%s: GET %s", session.id, path);
+var initRead = function(session, msg) {
+  console.log("%s: GET %s", session.id, msg.file);
   if(session.stream === undefined) {
-    fs.stat(path, function(error, stats) {
+    fs.stat(msg.file, function(error, stats) {
       if(error) {
         sendError(session.dest, error.toString());
       } else if(!stats.isFile()) {
-        sendError(session.dest, path + " is not a file"); 
+        sendError(session.dest, msg.file + " is not a file"); 
       } else {
-        initValidRead(session, path);
+        initValidRead(session, msg.file);
       }
     });
   } else {
     sendError(session.dest, "Unexpected read request");
-  }
-};
-
-var extractOpCode = function(buffer) {
-  if(buffer.length > 2) {
-    return buffer[0]*256 + buffer[1];
-  } else {
-    return opcodes.invalid;
   }
 };
 
@@ -167,10 +135,9 @@ var clearStaleSessions = function() {
   }
 };
 
-var initWrite = function(session, buffer) {
-  var path = extractPath(buffer); 
-  console.log("%s: PUT %s", session.id, path);
-  var stream = fs.createWriteStream(path, { flags: 'w'});
+var initWrite = function(session, msg) {
+  console.log("%s: PUT %s", session.id, msg.file);
+  var stream = fs.createWriteStream(msg.file, { flags: 'w'});
   stream.on("error", function(error) {
     sendError(session.dest, "Write error!")
   });
@@ -186,12 +153,10 @@ var sendAck = function(dest, block) {
   sendMessage(dest, new msgs.Ack(block));
 };
 
-var continueWrite = function(session, buffer) {
-  var block = extractBlock(buffer);
-  if(block == session.block) {
-    var data = extractData(buffer);
-    session.stream.write(data);
-    if(data.length < 512) {
+var continueWrite = function(session, msg) {
+  if(msg.block == session.block) {
+    session.stream.write(msg.data);
+    if(msg.data.length < 512) {
       session.stream.end();
       sendAck(session.dest, session.block);
       console.log("%s: Write finished successfully!", session.id);
@@ -204,44 +169,36 @@ var continueWrite = function(session, buffer) {
   }
 };
 
-var extractData = function(buffer) {
-  return buffer.slice(4);
-};
-
-var handleError = function(session, buffer) {
-  var code = extractErrorCode(buffer);
-  var msg = extractErrorMessage(buffer);
+var handleError = function(session, msg) {
   console.log("%s: Client reported error! Code: %d, msg: %s",
-              session.id, code, msg);
-};
-
-var extractErrorCode = function(buffer) {
-  return buffer[2] * 256 + buffer[3];
-};
-
-var extractErrorMessage = function(buffer) {
-  return buffer.slice(4, buffer.length-1).toString("utf-8");
+              session.id, msg.code, msg.message);
 };
 
 var handleMsg = function(buffer, addrinfo) {
   var id = util.format("%s:%d", addrinfo.address, addrinfo.port);
   var session = getOrCreateSession(id, addrinfo);
   session.lastMsgAt = os.uptime();
-  var opcode = extractOpCode(buffer);
-  if(opcode == opcodes.read) {
-    initRead(session, buffer);
-  } else if(opcode == opcodes.write) {
-    initWrite(session, buffer);
-  } else if(opcode == opcodes.data) {
-    continueWrite(session, buffer);
-  } else if(opcode == opcodes.ack) {
-    continueRead(session, buffer);
-  } else if(opcode == opcodes.error) {
-    handleError(session, buffer);
-  } else {
-    // Reply with error
-    console.log("Invalid opcode: %d", opcode);
-    sendError(addrinfo, "Invalid opcode");
+  var msg = messageParser.parse(buffer);
+  switch(msg.opcode) {
+    case opcodes.read:
+      initRead(session, msg);
+      break;
+    case opcodes.write:
+      initWrite(session, msg);
+      break;
+    case opcodes.data:
+      continueWrite(session, msg);
+      break;
+    case opcodes.ack:
+      continueRead(session, msg);
+      break;
+    case opcodes.error:
+      handleError(session, msg);
+      break;
+    default:
+      console.log("Invalid opcode: %d", opcode);
+      sendError(addrinfo, "Invalid opcode");
+      break;
   }
 };
 

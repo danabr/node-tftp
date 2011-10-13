@@ -8,18 +8,20 @@ var opcodes = {
 };
 
 function Ack(block) {
+  this.opcode = opcodes.ack;
   this.block = block;
 }
 
 Ack.prototype.toBuffer = function() {
   var buffer = new Buffer(5);
-  buffer[0] = 0; buffer[1] = opcodes.ack; // OpCode
+  buffer[0] = 0; buffer[1] = this.opcode;
   buffer[2] = (this.block >> 8) & 0xff;
   buffer[3] = this.block & 0xff;
   return buffer;
 };
 
 function Data(block, data) {
+  this.opcode = opcodes.data;
   this.block = block;
   this.data = data;
 }
@@ -34,6 +36,7 @@ Data.prototype.toBuffer = function() {
 };
 
 function Error(code, msg) {
+  this.opcode = opcodes.error;
   this.code = code;
   this.message = msg;
 }
@@ -54,38 +57,19 @@ function Invalid(opcode) {
 }
 
 function RRQ(file, mode, options) {
+  console.log("RRQ %s, %s, %s", file, mode, options);
+  this.opcode = opcodes.read;
   this.file = file;
   this.mode = mode;
   this.options = options;
 }
 
 function WRQ(file, mode, options) {
+  this.opcode = opcodes.write;
   this.file = file;
   this.mode = mode;
   this.options = options;
 }
-
-var parse = function(buffer) {
-  if(buffer.length >= 2) {
-    var opcode = buffer[0]*256 + buffer[1];
-    switch(opcode) {
-      case opcodes.ack:
-        return parseAck(buffer);
-      case opcodes.data:
-        return parseData(buffer); 
-      case opcodes.error:
-        return parseError(buffer);
-      case opcodes.rrq:
-        return parseRRQ(buffer);
-      case opcodes.wrq:
-        return parseWRQ(buffer);
-      default:
-        return new Invalid(opcode);  
-    } 
-  } else {
-    return new Invalid(0);
-  }
-};
 
 exports.Error = Error;
 exports.Ack = Ack;
@@ -93,4 +77,4 @@ exports.Data = Data;
 exports.RRQ = RRQ;
 exports.WRQ = WRQ;
 exports.Invalid = Invalid;
-exports.parse = parse;
+exports.opcodes = opcodes;
