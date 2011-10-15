@@ -57,7 +57,6 @@ function Invalid(opcode) {
 }
 
 function RRQ(file, mode, options) {
-  console.log("RRQ %s, %s, %s", file, mode, options);
   this.opcode = opcodes.read;
   this.file = file;
   this.mode = mode;
