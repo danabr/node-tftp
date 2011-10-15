@@ -1,8 +1,12 @@
 A binary mode only TFTP server implemented with NodeJS.
 
+How to run:
+node run_server.js
+
 TODO: 
 * Path sanitizing or whitelisting.
 * mkdir -p or similar for subdirectories.
 * Temporary filenames for writes, and mv if transfer finishes correctly.
 * Use a single timeout for a session, rather than multiple.
 * Support for RFC2347, RFC2348 and RFC2349.
+* Flow control. Prefer a stable memory picture over fast transfers.
