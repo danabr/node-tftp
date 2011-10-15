@@ -1,24 +1,23 @@
 var os = require('os');
-var msgs = require('./messages');
-var opcodes = msgs.opcodes;
 var fs = require('fs');
+var opcodes = require('./messages').opcodes;
+var TFTPSocket = require('./tftp_socket').TFTPSocket;
 
 var errors = {
   undefined: 0,
   notFound: 1,
   accessViolation: 2,
   diskFull: 3,
-  illegalTFTPOperation: 4,
+  illegalOperation: 4,
   unknownTransferID: 5,
   fileExists: 6,
   noSuchUser: 7
 };
 
-function Session(id, destination, socket) {
+function Session(id, socket, destination) {
   var self = this;
   this.id = id;
-  this.destination = destination;
-  this.socket = socket;
+  this.socket = new TFTPSocket(socket, destination);
   this.block = 1;
   this.buffer = [];
   this.lastMsgAt = -1;
@@ -30,15 +29,15 @@ function Session(id, destination, socket) {
     if(self.stream === undefined) {
       fs.stat(msg.file, function(error, stats) {
         if(error) {
-          sendError(errors.notFound, error.toString());
+          self.socket.sendError(errors.notFound, error.toString());
         } else if(!stats.isFile()) {
-          sendError(errors.notFound, msg.file + " is not a file"); 
+          self.socket.sendError(errors.notFound, msg.file + " is not a file"); 
         } else {
           initValidRead(msg.file);
         }
       });
     } else {
-      sendError(errors.illegalTFTPOperation, "Unexpected read request");
+      self.socket.sendError(errors.illegalOperation, "Unexpected read request");
     }
   };
 
@@ -54,7 +53,7 @@ function Session(id, destination, socket) {
       }
     });
     stream.on("error", function(error) {
-      sendError(errors.undefined, "Read error");
+      self.socket.sendError(errors.undefined, "Read error");
     });
     stream.on("end", function() {
       self.finished = true;
@@ -68,7 +67,7 @@ function Session(id, destination, socket) {
         console.log("%s: %d attempt to send block %d",
                     self.id, errors+1, block); 
       }
-      sendData(block, data);
+      self.socket.sendData(block, data);
       if(errors < 5) {
         errors += 1;
         setTimeout(sendUntilAcked, errors*1000, block, data, errors);
@@ -77,10 +76,6 @@ function Session(id, destination, socket) {
                     self.id);
       }
     } // Else, block has been acked
-  };
-
-  var sendData = function(block, data) {
-    sendMessage(new msgs.Data(block, data));
   };
 
   this.continueRead = function(msg) {
@@ -115,28 +110,14 @@ function Session(id, destination, socket) {
     console.log("%s: PUT %s", self.id, msg.file);
     var stream = fs.createWriteStream(msg.file, { flags: 'w'});
     stream.on("error", function(error) {
-      sendError(errors.undefined, "Write error!")
+      self.socket.sendError(errors.undefined, "Write error!")
     });
     stream.on("drain", function() {
-      sendAck(self.block);
+      self.socket.sendAck(self.block);
       self.block += 1;
     });
     self.stream = stream;
-    sendAck(0); 
-  };
-
-  var sendError = function(code, msg) {
-    sendMessage(new msgs.Error(code, msg));
-  };
-
-  var sendMessage = function(msg) {
-    var buffer = msg.toBuffer();
-    socket.send(buffer, 0, buffer.length, 
-      destination.port, destination.address);
-  };
-
-  var sendAck = function(block) {
-    sendMessage(new msgs.Ack(block));
+    self.socket.sendAck(0); 
   };
 
   this.continueWrite = function(msg) {
@@ -144,13 +125,13 @@ function Session(id, destination, socket) {
       self.stream.write(msg.data);
       if(msg.data.length < 512) {
         self.stream.end();
-        sendAck(self.block);
+        self.socket.sendAck(self.block);
         console.log("%s: Write finished successfully!", self.id);
       }
     } else if(block > self.block) {
-      sendError(errors.undefined, "Unexpected block number")
+      self.socket.sendError(errors.undefined, "Unexpected block number")
     } else if(block < self.block) {
-      sendAck(block); // Our ack may have been lost
+      self.socket.sendAck(block); // Our ack may have been lost
     }
   };
 

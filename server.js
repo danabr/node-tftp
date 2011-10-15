@@ -18,7 +18,7 @@ var handleMsg = function(buffer, addrinfo) {
 var getOrCreateSession = function(addrinfo) {
   var id = util.format("%s:%d", addrinfo.address, addrinfo.port);
   if(sessions[id] === undefined) {
-    sessions[id] = new Session(id, addrinfo, server);
+    sessions[id] = new Session(id, server, addrinfo);
   }
     return sessions[id];
 };
