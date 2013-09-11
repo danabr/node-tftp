@@ -122,10 +122,12 @@ function Session(id, socket, destination) {
 
   this.continueWrite = function(msg) {
     if(msg.block == self.block) {
-      self.stream.write(msg.data);
+      if (self.stream.write(msg.data)) {
+        self.socket.sendAck(self.block);
+        self.block += 1;
+      }
       if(msg.data.length < 512) {
         self.stream.end();
-        self.socket.sendAck(self.block);
         console.log("%s: Write finished successfully!", self.id);
       }
     } else if(block > self.block) {
