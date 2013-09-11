@@ -11,6 +11,7 @@ function Server(port) {
   var self = this;
   var sessions = {};
   this.port = port || 69;
+  this.clearingIntervalId = undefined;
 
   var handleMsg = function(buffer, peer) {
     var session = getOrCreateSession(peer);
@@ -28,12 +29,21 @@ function Server(port) {
 
   this.clearStaleSessions = function() {
     var clearTime = os.uptime() - 30;
-    for(sessionId in sessions) {
+    for(var sessionId in sessions) {
       if(sessions.hasOwnProperty(sessionId)) {
         if(sessions[sessionId].lastMsgAt < clearTime) {
           console.log("Clearing stale session: %s", sessionId);
           deleteSession(sessions[sessionId]); 
         }
+      }
+    }
+  };
+
+  this.clearAllSessions = function() {
+    for(var sessionId in sessions) {
+      if(sessions.hasOwnProperty(sessionId)) {
+        console.log("Clearing session: %s", sessionId);
+        deleteSession(sessions[sessionId]);
       }
     }
   };
@@ -48,11 +58,17 @@ function Server(port) {
 
 Server.prototype.listen = function(callback) {
   this.socket.bind(this.port, callback);
-  setInterval(this.clearStaleSessions, 30000);
+  this.clearingIntervalId = setInterval(this.clearStaleSessions, 30000);
 };
 
 Server.prototype.address = function() {
   return this.socket.address();
+};
+
+Server.prototype.stop = function() {
+  this.socket.close();
+  clearInterval(this.clearingIntervalId);
+  this.clearAllSessions();
 };
 
 exports.Server = Server;
