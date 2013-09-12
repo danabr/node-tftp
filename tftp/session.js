@@ -128,10 +128,10 @@ function Session(id, socket, destination) {
         self.socket.sendAck(self.block);
         console.log("%s: Write finished successfully!", self.id);
       }
-    } else if(block > self.block) {
+    } else if(msg.block > self.block) {
       self.socket.sendError(errors.undefined, "Unexpected block number")
-    } else if(block < self.block) {
-      self.socket.sendAck(block); // Our ack may have been lost
+    } else if(msg.block < self.block) {
+      self.socket.sendAck(msg.block); // Our ack may have been lost
     }
   };
 
