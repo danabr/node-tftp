@@ -46,8 +46,8 @@ function Server(port) {
   this.socket = dgram.createSocket("udp4", handleMsg);
 }
 
-Server.prototype.listen = function() {
-  this.socket.bind(this.port);
+Server.prototype.listen = function(callback) {
+  this.socket.bind(this.port, callback);
   setInterval(this.clearStaleSessions, 30000);
 };
 
