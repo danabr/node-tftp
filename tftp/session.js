@@ -73,7 +73,7 @@ function Session(id, socket, destination) {
         setTimeout(sendUntilAcked, errors*1000, block, data, errors);
       } else {
         console.log("%s: Block %d was never acked. Stopping transmission.",
-                    self.id);
+                    self.id, block);
       }
     } // Else, block has been acked
   };
