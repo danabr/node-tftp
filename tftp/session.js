@@ -122,13 +122,17 @@ function Session(id, socket, destination) {
 
   this.continueWrite = function(msg) {
     if(msg.block == self.block) {
-      if (self.stream.write(msg.data)) {
-        self.socket.sendAck(self.block);
-        self.block += 1;
-      }
-      if(msg.data.length < 512) {
-        self.stream.end();
-        console.log("%s: Write finished successfully!", self.id);
+      if (self.stream === undefined){
+        self.socket.sendError(errors.undefined, "Data without WRQ");
+      } else {
+        if (self.stream.write(msg.data)) {
+          self.socket.sendAck(self.block);
+          self.block += 1;
+        }
+        if(msg.data.length < 512) {
+          self.stream.end();
+          console.log("%s: Write finished successfully!", self.id);
+        }
       }
     } else if(msg.block > self.block) {
       self.socket.sendError(errors.undefined, "Unexpected block number")
